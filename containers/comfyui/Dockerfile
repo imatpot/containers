@@ -5,7 +5,7 @@ ARG GID=1000
 ENV UID=${UID}
 ENV GID=${GID}
 
-RUN getent group "${GID}" || groupadd -g -l "${GID}" comfyui && \
+RUN getent group "${GID}" || groupadd -g "${GID}" comfyui && \
     useradd -l -u "${UID}" -g "${GID}" -m comfyui
 
 COPY src /comfyui
