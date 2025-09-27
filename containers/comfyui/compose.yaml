@@ -1,0 +1,44 @@
+x-comfyui-base: &comfyui-base
+  user: "${UID:-1000}:${GID:-100}"
+  image: comfyui
+  build:
+    context: .
+    args:
+      UID: "${UID:-1000}"
+      GID: "${GID:-100}"
+  ports:
+    - "${PORT:-8188}:8188"
+  volumes:
+    - "${NODES_PATH:-./custom_nodes}:/comfyui/custom_nodes"
+    - "${MODELS_PATH:-./models}:/comfyui/models"
+    - "${OUTPUTS_PATH:-./output}:/comfyui/output"
+    - "${USER_PATH:-./user}:/comfyui/user"
+    - "${WORKFLOWS_PATH:-./workflows}:/comfyui/user/default/workflows"
+  restart: unless-stopped
+
+services:
+  comfyui-cpu:
+    <<: *comfyui-base
+    container_name: comfyui-cpu
+    hostname: comfyui-cpu
+    profiles:
+      - cpu
+    command: >
+      python main.py --listen=${LISTEN_IP:-0.0.0.0} --cpu
+
+  comfyui:
+    <<: *comfyui-base
+    container_name: comfyui
+    hostname: comfyui
+    profiles:
+      - gpu
+    command: >
+      python main.py --listen=${LISTEN_IP:-0.0.0.0}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: cdi
+              capabilities: ["gpu"]
+              device_ids:
+                - nvidia.com/gpu=all
