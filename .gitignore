@@ -1,0 +1,9 @@
+**/*
+
+!.gitignore
+!.gitmodules
+!containers
+!containers/*
+!containers/**/Dockerfile
+!containers/**/compose.yaml
+!**/*.md
