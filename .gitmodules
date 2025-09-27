@@ -1,3 +1,6 @@
 [submodule "containers/comfyui/src"]
 	path = containers/comfyui/src
 	url = https://github.com/comfyanonymous/ComfyUI
+[submodule "containers/swarmui/src"]
+	path = containers/swarmui/src
+	url = https://github.com/mcmonkeyprojects/SwarmUI.git

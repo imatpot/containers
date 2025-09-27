@@ -1,0 +1,31 @@
+services:
+  swarmui:
+    image: swarmui
+    user: ${HOST_UID:-1000}:${HOST_GID:-1000}
+    hostname: swarmui
+    container_name: swarmui
+    build:
+      context: .
+      args:
+        UID: ${HOST_UID:-1000}
+    ports:
+      - "7801:7801"
+    volumes:
+      - ${DATA_PATH:-./data}:/SwarmUI/Data
+      - ${DLBACKEND_PATH:-./dlbackend}:/SwarmUI/dlbackend
+      - ${DLNODES_PATH:-./nodes}:/SwarmUI/src/BuiltinExtensions/ComfyUIBackend/DLNodes
+      - ${EXTENSIONS_PATH:-./extensions}:/SwarmUI/src/Extensions
+      - ${MODELS_PATH:-./models}:/SwarmUI/Models
+      - ${WORKFLOWS_PATH:-./workflows}:/SwarmUI/src/BuiltinExtensions/ComfyUIBackend/CustomWorkflows
+      - ${OUTPUTS_PATH:-./outputs}:/SwarmUI/Output/data
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: cdi
+              capabilities: ["gpu"]
+              device_ids:
+                - nvidia.com/gpu=all
+    restart: unless-stopped
