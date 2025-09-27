@@ -7,3 +7,5 @@
 !containers/**/Dockerfile
 !containers/**/compose.yaml
 !**/*.md
+!.github
+!.github/**/*
