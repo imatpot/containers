@@ -1,0 +1,113 @@
+name: Update Submodules
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'
+
+jobs:
+  update-submodules:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update submodules
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          HAS_UPDATE=false
+
+          git config --file .gitmodules --get-regexp path | while read -r key value; do
+            SUBMODULE_PATH="$value"
+
+            echo "Processing submodule: $SUBMODULE_PATH"
+
+            SUBMODULE_URL=$(git config --file .gitmodules --get "submodule.$SUBMODULE_PATH.url")
+            echo "Repository URL: $SUBMODULE_URL"
+
+            REPO_PATH=$(echo "$SUBMODULE_URL" | sed -e 's|https://github.com/||' -e 's|\.git$||')
+            echo "Repository: $REPO_PATH"
+
+            cd "$SUBMODULE_PATH"
+            git fetch origin --tags
+
+            LATEST_GH_RELEASE=$(gh release list --repo "$REPO_PATH" --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || echo "")
+
+            if [ -n "$LATEST_GH_RELEASE" ]; then
+              echo "Latest GitHub release found: $LATEST_GH_RELEASE"
+              TARGET_REF="$LATEST_GH_RELEASE"
+              UPDATE_TYPE="release"
+            else
+              echo "No GitHub release found, using latest commit from default branch"
+              DEFAULT_BRANCH=$(git remote show origin | sed -n '/HEAD branch/s/.*: //p')
+              if [ -z "$DEFAULT_BRANCH" ]; then
+                DEFAULT_BRANCH="main"
+              fi
+              echo "Default branch: $DEFAULT_BRANCH"
+              TARGET_REF="origin/$DEFAULT_BRANCH"
+              UPDATE_TYPE="commit"
+            fi
+
+            CURRENT_COMMIT=$(git rev-parse HEAD)
+
+            git checkout "$TARGET_REF"
+
+            NEW_COMMIT=$(git rev-parse HEAD)
+
+            cd - > /dev/null
+
+            if [ "$CURRENT_COMMIT" != "$NEW_COMMIT" ]; then
+              echo "Update detected for $SUBMODULE_PATH"
+              echo "  From: $CURRENT_COMMIT"
+              echo "  To: $NEW_COMMIT ($TARGET_REF)"
+
+              git add "$SUBMODULE_PATH"
+              HAS_UPDATE=true
+
+              if [ "$UPDATE_TYPE" = "release" ]; then
+                COMMIT_MSG="chore: update $SUBMODULE_PATH to $TARGET_REF"
+              else
+                COMMIT_MSG="chore: update $SUBMODULE_PATH to latest commit"
+              fi
+
+              git commit -m "$COMMIT_MSG" -m "Updated from $CURRENT_COMMIT to $NEW_COMMIT"
+            else
+              echo "No update needed for $SUBMODULE_PATH"
+            fi
+
+            echo "---"
+          done
+
+          if git log origin/main..HEAD --oneline | grep -q .; then
+            echo "Pushing updates to main..."
+            git push origin main
+            echo "✓ Submodule updates pushed successfully"
+          else
+            echo "No updates to push"
+          fi
+
+      - name: Create summary
+        if: always()
+        run: |
+          echo "## Submodule Update Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Workflow completed at $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Show current submodule status
+          echo "### Current Submodules" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          git submodule status >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
