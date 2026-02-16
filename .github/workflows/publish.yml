@@ -6,9 +6,11 @@ on:
       - main
     paths:
       - "containers/**/Dockerfile"
+      - "containers/**/src"
   pull_request:
     paths:
       - "containers/**/Dockerfile"
+      - "containers/**/src"
   workflow_dispatch:
     inputs:
       container_name:
@@ -40,28 +42,55 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Find modified Dockerfiles
+      - name: Find modified containers
         id: changed-files
         uses: tj-actions/changed-files@v41
         with:
-          files: containers/**/Dockerfile
+          files: |
+            containers/**/Dockerfile
+            containers/**/src
 
       - name: Build and publish modified containers
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
+          CONTAINERS=""
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
-            echo "Processing ${file}"
-
+            echo "Processing changed file: ${file}"
             CONTAINER_NAME=$(echo "${file}" | cut -d '/' -f2)
-            CONTEXT_PATH=$(dirname "${file}")
+            if [[ ! " ${CONTAINERS} " =~ " ${CONTAINER_NAME} " ]]; then
+              CONTAINERS="${CONTAINERS} ${CONTAINER_NAME}"
+            fi
+          done
 
-            echo "Building and pushing $CONTAINER_NAME from $CONTEXT_PATH"
+          for CONTAINER_NAME in ${CONTAINERS}; do
+            CONTEXT_PATH="containers/${CONTAINER_NAME}"
+            SUBMODULE_PATH="${CONTEXT_PATH}/src"
+
+            echo "Building and pushing ${CONTAINER_NAME} from ${CONTEXT_PATH}"
+
+            if [ -d "${SUBMODULE_PATH}/.git" ] || [ -f "${SUBMODULE_PATH}/.git" ]; then
+              cd "${SUBMODULE_PATH}"
+              SUBMODULE_COMMIT=$(git rev-parse HEAD)
+              SUBMODULE_TAG=$(git describe --exact-match --tags "${SUBMODULE_COMMIT}" 2>/dev/null || echo "")
+              cd "${GITHUB_WORKSPACE}"
+
+              if [ -n "${SUBMODULE_TAG}" ]; then
+                VERSION_TAG="${SUBMODULE_TAG}"
+                echo "Using submodule tag: ${VERSION_TAG}"
+              else
+                VERSION_TAG=$(echo "${SUBMODULE_COMMIT}" | cut -c1-7)
+                echo "Using submodule commit: ${VERSION_TAG}"
+              fi
+            else
+              VERSION_TAG=$(echo ${{ github.sha }} | cut -c1-7)
+              echo "No submodule found, using main repo commit: ${VERSION_TAG}"
+            fi
 
             docker buildx build \
               --push \
               --platform linux/amd64 \
               --tag "ghcr.io/${{ github.repository_owner }}/${CONTAINER_NAME}:latest" \
-              --tag "ghcr.io/${{ github.repository_owner }}/${CONTAINER_NAME}:$(echo ${{ github.sha }} | cut -c1-7)" \
+              --tag "ghcr.io/${{ github.repository_owner }}/${CONTAINER_NAME}:${VERSION_TAG}" \
               --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
               --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
               --label "org.opencontainers.image.revision=${{ github.sha }}" \
@@ -77,12 +106,31 @@ jobs:
 
           if [ -f "$DOCKERFILE_PATH" ]; then
             echo "Building and pushing ${CONTAINER_NAME} from ${CONTAINER_PATH}"
-            
+
+            SUBMODULE_PATH="${CONTAINER_PATH}/src"
+            if [ -d "${SUBMODULE_PATH}/.git" ] || [ -f "${SUBMODULE_PATH}/.git" ]; then
+              cd "${SUBMODULE_PATH}"
+              SUBMODULE_COMMIT=$(git rev-parse HEAD)
+              SUBMODULE_TAG=$(git describe --exact-match --tags "${SUBMODULE_COMMIT}" 2>/dev/null || echo "")
+              cd "${GITHUB_WORKSPACE}"
+
+              if [ -n "${SUBMODULE_TAG}" ]; then
+                VERSION_TAG="${SUBMODULE_TAG}"
+                echo "Using submodule tag: ${VERSION_TAG}"
+              else
+                VERSION_TAG=$(echo "${SUBMODULE_COMMIT}" | cut -c1-7)
+                echo "Using submodule commit: ${VERSION_TAG}"
+              fi
+            else
+              VERSION_TAG=$(echo ${{ github.sha }} | cut -c1-7)
+              echo "No submodule found, using main repo commit: ${VERSION_TAG}"
+            fi
+
             docker buildx build \
               --push \
               --platform linux/amd64 \
               --tag "ghcr.io/${{ github.repository_owner }}/${CONTAINER_NAME}:latest" \
-              --tag "ghcr.io/${{ github.repository_owner }}/${CONTAINER_NAME}:$(echo ${{ github.sha }} | cut -c1-7)" \
+              --tag "ghcr.io/${{ github.repository_owner }}/${CONTAINER_NAME}:${VERSION_TAG}" \
               --label "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
               --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
               --label "org.opencontainers.image.revision=${{ github.sha }}" \
