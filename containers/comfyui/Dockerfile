@@ -1,28 +1,52 @@
-FROM python:3.10-slim
+# syntax=docker/dockerfile:1
+FROM python:3.13-slim AS builder
 
 ARG UID=1000
 ARG GID=1000
-ENV UID=${UID}
-ENV GID=${GID}
+
+RUN apt-get update && \
+    apt-get install --no-install-recommends -y git && \
+    rm -rf /var/lib/apt/lists/*
 
 RUN getent group "${GID}" || groupadd -g "${GID}" comfyui && \
     useradd -l -u "${UID}" -g "${GID}" -m comfyui
 
-COPY src /comfyui
-RUN chown -R "${UID}:${GID}" /comfyui
+USER comfyui
+WORKDIR /comfyui
+
+COPY --chown="${UID}:${GID}" src/requirements.txt src/manager_requirements.txt* ./
+RUN --mount=type=cache,target=/home/comfyui/.cache/pip,uid="${UID}",gid="${GID}" \
+    pip install --user --no-cache-dir -r requirements.txt && \
+    if [ -f manager_requirements.txt ]; then pip install --user --no-cache-dir -r manager_requirements.txt; fi
+
+COPY --chown="${UID}:${GID}" src /comfyui
+RUN python -m compileall -q /comfyui
+
+FROM python:3.13-slim
+
+ARG UID=1000
+ARG GID=1000
+ENV UID=${UID} \
+    GID=${GID} \
+    PATH="/home/comfyui/.local/bin:${PATH}" \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && \
-    apt-get install --no-install-recommends -y git ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install --no-install-recommends -y \
+    git \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+RUN getent group "${GID}" || groupadd -g "${GID}" comfyui && \
+    useradd -l -u "${UID}" -g "${GID}" -m comfyui
 
 USER comfyui
 WORKDIR /comfyui
-SHELL ["/bin/bash", "-c"]
 
-RUN echo "export PATH=\${PATH}:/home/comfyui/.local/bin" >> /home/comfyui/.profile && \
-    source /home/comfyui/.profile && \
-    pip install --no-cache-dir -r requirements.txt
+COPY --from=builder --chown="${UID}:${GID}" /home/comfyui/.local /home/comfyui/.local
+COPY --from=builder --chown="${UID}:${GID}" /comfyui /comfyui
 
 EXPOSE 8188
-CMD ["python", "main.py"]
 
+CMD ["python", "main.py"]
