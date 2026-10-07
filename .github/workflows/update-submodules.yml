@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout repository
@@ -27,9 +28,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          HAS_UPDATE=false
+          UPDATED_CONTAINERS=""
 
-          git config --file .gitmodules --get-regexp path | while read -r key value; do
+          while read -r key value; do
             SUBMODULE_PATH="$value"
 
             echo "Processing submodule: $SUBMODULE_PATH"
@@ -74,7 +75,7 @@ jobs:
               echo "  To: $NEW_COMMIT ($TARGET_REF)"
 
               git add "$SUBMODULE_PATH"
-              HAS_UPDATE=true
+              UPDATED_CONTAINERS="$UPDATED_CONTAINERS $(echo "$SUBMODULE_PATH" | cut -d '/' -f2)"
 
               if [ "$UPDATE_TYPE" = "release" ]; then
                 COMMIT_MSG="chore: update $SUBMODULE_PATH to $TARGET_REF"
@@ -88,12 +89,18 @@ jobs:
             fi
 
             echo "---"
-          done
+          done < <(git config --file .gitmodules --get-regexp path)
 
           if git log origin/main..HEAD --oneline | grep -q .; then
             echo "Pushing updates to main..."
             git push origin main
             echo "✓ Submodule updates pushed successfully"
+
+            # Pushes made with GITHUB_TOKEN don't trigger other workflows, but workflow_dispatch is exempt, so publish the updated containers explicitly
+            for CONTAINER_NAME in $UPDATED_CONTAINERS; do
+              echo "Dispatching publish workflow for $CONTAINER_NAME"
+              gh workflow run publish.yml --ref main -f container_name="$CONTAINER_NAME"
+            done
           else
             echo "No updates to push"
           fi

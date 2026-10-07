@@ -51,7 +51,7 @@ jobs:
             containers/**/src
 
       - name: Build and publish modified containers
-        if: steps.changed-files.outputs.any_changed == 'true'
+        if: github.event_name != 'workflow_dispatch' && steps.changed-files.outputs.any_changed == 'true'
         run: |
           CONTAINERS=""
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
